@@ -1,65 +1,48 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 
-	"gopkg.in/rana/ora.v4"
+	_ "gopkg.in/rana/ora.v4"
 )
 
 func main() {
+	db, err := sql.Open("ora", "nxt/cetin1@ZISD")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer db.Close()
 
-	// example usage of the ora package driver
-	// connect to a server and open a session
-	env, err := ora.OpenEnv()
-	defer env.Close()
-	if err != nil {
-		panic(err)
-	}
-	srvCfg := ora.SrvCfg{Dblink: "ZISD"}
-	srv, err := env.OpenSrv(srvCfg)
-	defer srv.Close()
-	if err != nil {
-		panic(err)
-	}
-	sesCfg := ora.SesCfg{
-		Username: "nxt",
-		Password: "cetin1",
-	}
-	ses, err := srv.OpenSes(sesCfg)
-	defer ses.Close()
-	if err != nil {
-		panic(err)
+	if err = db.Ping(); err != nil {
+		fmt.Printf("Error connecting to the database: %s\n", err)
+		return
 	}
 
-	schemas := []string{"NETCAT", "PUBLIC_VIEW", "NXT"}
+	schemas := []string{"KFA", "CIP", "NETCAT", "IFACE", "NXT", "PUBLIC_VIEW"}
 	for _, schema := range schemas {
-		fmt.Println(">> schema:", schema)
 
-		// Drop table
-		_, err = ses.PrepAndExe("drop table tmp_ident_col")
+		fmt.Println("schema:", schema)
 
-		// Crate table
-		_, err = ses.PrepAndExe(fmt.Sprintf("create table tmp_ident_col as SELECT table_name, column_name, to_lob(data_default) as data_default "+
-			"FROM dba_tab_columns WHERE IDENTITY_column = '%v' AND data_default IS NOT null and owner = '%v'", "YES", schema))
-		if err != nil {
-			panic(err)
-		}
+		rows, err := db.Query("SELECT table_name, column_name, data_default "+
+			"FROM dba_tab_columns "+
+			"WHERE IDENTITY_column = :1 "+
+			"AND data_default IS NOT null and owner = :2", "YES", schema)
 
-		// Fetch records
-		stmtQry, err := ses.Prep("SELECT table_name, column_name, data_default from tmp_ident_col")
-		defer stmtQry.Close()
 		if err != nil {
-			panic(err)
+			fmt.Println("Error fetching data.")
+			fmt.Println(err)
+			return
 		}
-		rset, err := stmtQry.Qry()
-		if err != nil {
-			panic(err)
-		}
-		for rset.Next() {
-			fmt.Println("tableName:", rset.Row[0], "columnName:", rset.Row[1], "dataDefault:", rset.Row[2])
-		}
-		if err := rset.Err(); err != nil {
-			panic(err)
+		defer rows.Close()
+
+		for rows.Next() {
+			var tableName string
+			var columnName string
+			var dataDefault []byte
+			rows.Scan(&tableName, &columnName, &dataDefault)
+			fmt.Printf("Table name: %v, column: %v, data: %v\n", tableName, columnName, string(dataDefault))
 		}
 	}
 }
