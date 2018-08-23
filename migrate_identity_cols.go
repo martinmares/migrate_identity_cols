@@ -1,70 +1,65 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 
-	_ "github.com/mattn/go-oci8"
+	"gopkg.in/rana/ora.v4"
 )
 
 func main() {
-	db, err := sql.Open("oci8", "nxt/cetin1@ZISD")
+
+	// example usage of the ora package driver
+	// connect to a server and open a session
+	env, err := ora.OpenEnv()
+	defer env.Close()
 	if err != nil {
-		fmt.Println(err)
-		return
+		panic(err)
 	}
-	defer db.Close()
-
-	if err = db.Ping(); err != nil {
-		fmt.Printf("Error connecting to the database: %s\n", err)
-		return
+	srvCfg := ora.SrvCfg{Dblink: "ZISD"}
+	srv, err := env.OpenSrv(srvCfg)
+	defer srv.Close()
+	if err != nil {
+		panic(err)
+	}
+	sesCfg := ora.SesCfg{
+		Username: "nxt",
+		Password: "cetin1",
+	}
+	ses, err := srv.OpenSes(sesCfg)
+	defer ses.Close()
+	if err != nil {
+		panic(err)
 	}
 
-	// rows, err := db.Query("SELECT table_name, column_name FROM dba_tab_columns WHERE IDENTITY_column = :1 AND data_default IS NOT null and owner = :2", "YES", "NETCAT")
-	// if err != nil {
-	// 	fmt.Println("Error fetching addition")
-	// 	fmt.Println(err)
-	// 	return
-	// }
-	// defer rows.Close()
-	// for rows.Next() {
-	// 	var tableName string
-	// 	var columnName string
-	// 	rows.Scan(&tableName, &columnName)
-	// 	fmt.Printf("Table name: %v, column: %v\n", tableName, columnName)
-	// }
-
-	schemas := []string{"NETCAT", "PUBLIC_VIEW"}
+	schemas := []string{"NETCAT", "PUBLIC_VIEW", "NXT"}
 	for _, schema := range schemas {
+		fmt.Println(">> schema:", schema)
 
-		fmt.Println("schema:", schema)
+		// Drop table
+		_, err = ses.PrepAndExe("drop table tmp_ident_col")
 
-		_, err = db.Exec("drop table tmp_ident_col")
-		_, err = db.Exec(fmt.Sprintf("create table tmp_ident_col as SELECT table_name, column_name, to_lob(data_default) as data_default FROM dba_tab_columns WHERE IDENTITY_column = '%v' AND data_default IS NOT null and owner = '%v'", "YES", schema))
-		// ORA-01036: nepřípustné jméno nebo číslo proměnné
-		//_, err = db.Exec("create table tmp_ident_col as SELECT table_name, column_name, to_lob(data_default) as data_default FROM dba_tab_columns WHERE identity_column = :1 AND data_default IS NOT null and owner = :2 ", "YES", schema)
+		// Crate table
+		_, err = ses.PrepAndExe(fmt.Sprintf("create table tmp_ident_col as SELECT table_name, column_name, to_lob(data_default) as data_default "+
+			"FROM dba_tab_columns WHERE IDENTITY_column = '%v' AND data_default IS NOT null and owner = '%v'", "YES", schema))
 		if err != nil {
-			fmt.Println(err)
-			return
+			panic(err)
 		}
 
-		//rows, err := db.Query("SELECT table_name, column_name, data_default FROM dba_tab_columns WHERE IDENTITY_column = :1 AND data_default IS NOT null and owner = :2", "YES", schema)
-		rows, err := db.Query("SELECT table_name, column_name, data_default from tmp_ident_col")
-
+		// Fetch records
+		stmtQry, err := ses.Prep("SELECT table_name, column_name, data_default from tmp_ident_col")
+		defer stmtQry.Close()
 		if err != nil {
-			fmt.Println("Error fetching data")
-			fmt.Println(err)
-			return
+			panic(err)
 		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var tableName string
-			var columnName string
-			var dataDefault []byte
-			rows.Scan(&tableName, &columnName, &dataDefault)
-			fmt.Printf("Table name: %v, column: %v, data: %v\n", tableName, columnName, string(dataDefault))
+		rset, err := stmtQry.Qry()
+		if err != nil {
+			panic(err)
 		}
-		_, err = db.Exec("drop table tmp_ident_col")
+		for rset.Next() {
+			fmt.Println("tableName:", rset.Row[0], "columnName:", rset.Row[1], "dataDefault:", rset.Row[2])
+		}
+		if err := rset.Err(); err != nil {
+			panic(err)
+		}
 	}
 }
