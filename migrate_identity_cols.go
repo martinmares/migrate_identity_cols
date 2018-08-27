@@ -19,7 +19,7 @@ func main() {
 
 	green := color.New(color.FgHiGreen).SprintFunc()
 	red := color.New(color.FgHiRed).SprintFunc()
-	magenta := color.New(color.FgMagenta).SprintFunc()
+	magenta := color.New(color.FgHiMagenta).SprintFunc()
 
 	fmt.Fprintf(color.Output, "dataSourceName: %s\n", green(*dataSourceNameArg))
 	fmt.Fprintf(color.Output, "userName: %s\n", green(*userNameArg))
