@@ -50,7 +50,7 @@ func main() {
 	rows, err := db.Query("SELECT table_name, column_name, data_default "+
 		"FROM all_tab_columns "+
 		"WHERE IDENTITY_column = :1 "+
-		"AND data_default IS NOT null and owner = :2", "YES", *userNameArg)
+		"AND data_default IS NOT null and owner = upper(:2)", "YES", *userNameArg)
 	if err != nil {
 		fmt.Fprintf(color.Output, "Error fetching data: %s\n", red(err))
 		return
